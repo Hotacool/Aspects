@@ -11,6 +11,17 @@
 
 @implementation AspectsViewController
 
+- (void)viewDidLoad {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    button.frame = CGRectMake(0, 0, 100, 100);
+    button.center = self.view.center;
+    button.backgroundColor = [UIColor grayColor];
+    [button setTitle:@"test" forState:UIControlStateNormal];
+    [button setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [self.view addSubview:button];
+    [button addTarget:self action:@selector(buttonPressed:) forControlEvents:UIControlEventTouchUpInside];
+}
+
 - (IBAction)buttonPressed:(id)sender {
     UIViewController *testController = [[UIImagePickerController alloc] init];
 
