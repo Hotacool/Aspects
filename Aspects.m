@@ -53,6 +53,7 @@ typedef struct _AspectBlock {
 @property (nonatomic, strong) NSMethodSignature *blockSignature;
 @property (nonatomic, weak) id object;
 @property (nonatomic, assign) AspectOptions options;
+@property (nonatomic, assign) BOOL isClassMethod;// @add by hotacool : support class method
 @end
 
 // Tracks all aspects for an object/class.
@@ -128,7 +129,7 @@ static id aspect_add(id self, SEL selector, AspectOptions options, id block, NSE
                 [aspectContainer addAspect:identifier withOptions:options];
 
                 // Modify the class to allow message interception.
-                aspect_prepareClassAndHookSelector(self, selector, error);
+                aspect_prepareClassAndHookSelector(self, selector, identifier.isClassMethod, error);
             }
         }
     });
@@ -240,14 +241,19 @@ static BOOL aspect_isMsgForwardIMP(IMP impl) {
     ;
 }
 
-static IMP aspect_getMsgForwardIMP(NSObject *self, SEL selector) {
+static IMP aspect_getMsgForwardIMP(NSObject *self, BOOL isClassMethod, SEL selector) {
     IMP msgForwardIMP = _objc_msgForward;
 #if !defined(__arm64__)
     // As an ugly internal runtime implementation detail in the 32bit runtime, we need to determine of the method we hook returns a struct or anything larger than id.
     // https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/LowLevelABI/000-Introduction/introduction.html
     // https://github.com/ReactiveCocoa/ReactiveCocoa/issues/783
     // http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042e/IHI0042E_aapcs.pdf (Section 5.4)
-    Method method = class_getInstanceMethod(self.class, selector);
+    Method method;
+    if (isClassMethod) {// @add by hotacool : support class method
+        method = class_getClassMethod(self.class, selector);
+    }else{
+        method = class_getInstanceMethod(self.class, selector);
+    }
     const char *encoding = method_getTypeEncoding(method);
     BOOL methodReturnsStructValue = encoding[0] == _C_STRUCT_B;
     if (methodReturnsStructValue) {
@@ -267,9 +273,9 @@ static IMP aspect_getMsgForwardIMP(NSObject *self, SEL selector) {
     return msgForwardIMP;
 }
 
-static void aspect_prepareClassAndHookSelector(NSObject *self, SEL selector, NSError **error) {
+static void aspect_prepareClassAndHookSelector(NSObject *self, SEL selector, BOOL isClassMethod, NSError **error) {
     NSCParameterAssert(selector);
-    Class klass = aspect_hookClass(self, error);
+    Class klass = aspect_hookClass(self, isClassMethod, error);
     Method targetMethod = class_getInstanceMethod(klass, selector);
     IMP targetMethodIMP = method_getImplementation(targetMethod);
     if (!aspect_isMsgForwardIMP(targetMethodIMP)) {
@@ -282,7 +288,7 @@ static void aspect_prepareClassAndHookSelector(NSObject *self, SEL selector, NSE
         }
 
         // We use forwardInvocation to hook in.
-        class_replaceMethod(klass, selector, aspect_getMsgForwardIMP(self, selector), typeEncoding);
+        class_replaceMethod(klass, selector, aspect_getMsgForwardIMP(self, isClassMethod, selector), typeEncoding);
         AspectLog(@"Aspects: Installed hook for -[%@ %@].", klass, NSStringFromSelector(selector));
     }
 }
@@ -347,7 +353,7 @@ static void aspect_cleanupHookedClassAndSelector(NSObject *self, SEL selector) {
 ///////////////////////////////////////////////////////////////////////////////////////////
 #pragma mark - Hook Class
 
-static Class aspect_hookClass(NSObject *self, NSError **error) {
+static Class aspect_hookClass(NSObject *self, BOOL isClassMethod, NSError **error) {
     NSCParameterAssert(self);
 	Class statedClass = self.class;
 	Class baseClass = object_getClass(self);
@@ -359,6 +365,9 @@ static Class aspect_hookClass(NSObject *self, NSError **error) {
 
         // We swizzle a class object, not a single object.
 	}else if (class_isMetaClass(baseClass)) {
+        if (isClassMethod) { // @add by hotacool : support class method
+            return aspect_swizzleClassInPlace(baseClass);
+        }
         return aspect_swizzleClassInPlace((Class)self);
         // Probably a KVO'ed class. Swizzle in place. Also swizzle meta classes in place.
     }else if (statedClass != baseClass) {
@@ -438,10 +447,11 @@ static Class aspect_swizzleClassInPlace(Class klass) {
     NSString *className = NSStringFromClass(klass);
 
     _aspect_modifySwizzledClasses(^(NSMutableSet *swizzledClasses) {
-        if (![swizzledClasses containsObject:className]) {
+        // @comment by hotacool : support class method. make a distinction between class and meta class
+//        if (![swizzledClasses containsObject:className]) {
             aspect_swizzleForwardInvocation(klass);
             [swizzledClasses addObject:className];
-        }
+//        }
     });
     return klass;
 }
@@ -810,8 +820,13 @@ static void aspect_deregisterTrackedSelector(id self, SEL selector) {
 + (instancetype)identifierWithSelector:(SEL)selector object:(id)object options:(AspectOptions)options block:(id)block error:(NSError **)error {
     NSCParameterAssert(block);
     NSCParameterAssert(selector);
+    // 判断是否是class method
+    BOOL isClassMethod = NO;
+    if ([object respondsToSelector:selector] && ![[object class] instancesRespondToSelector:selector]) {//@add by hotacool : support class method
+        isClassMethod = YES;
+    }
     NSMethodSignature *blockSignature = aspect_blockMethodSignature(block, error); // TODO: check signature compatibility, etc.
-    if (!aspect_isCompatibleBlockSignature(blockSignature, object, selector, error)) {
+    if (!isClassMethod && !aspect_isCompatibleBlockSignature(blockSignature, object, selector, error)) {
         return nil;
     }
 
@@ -822,7 +837,12 @@ static void aspect_deregisterTrackedSelector(id self, SEL selector) {
         identifier.block = block;
         identifier.blockSignature = blockSignature;
         identifier.options = options;
-        identifier.object = object; // weak
+        identifier.isClassMethod = isClassMethod;
+        if (isClassMethod) {
+            identifier.object = [object class]; // weak
+        }else{
+            identifier.object = object; // weak
+        }
     }
     return identifier;
 }
