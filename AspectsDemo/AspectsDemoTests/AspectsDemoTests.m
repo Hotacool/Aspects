@@ -473,6 +473,7 @@
     XCTAssertFalse([token remove], @"Deregistration must not work twice");
 }
 
+// @comment by hotacool: cannot be passed when checking all tests together. Because after supporting class method, the 'forwardInvocation' of testClass.class is changed, so the implementations of 'forwardInvocation' for NSObject and testClass.class cannot be equal!
 - (void)testGlobalTokenDeregistration {
     TestClass *testClass = [TestClass new];
 
