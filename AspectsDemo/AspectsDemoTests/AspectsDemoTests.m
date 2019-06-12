@@ -41,6 +41,10 @@
     return 99;
 }
 
++ (void)testClassMethod {
+    NSLog(@"%s", __func__);
+}
+
 @end
 
 @interface TestWithCustomForwardInvocation : NSObject
@@ -473,7 +477,6 @@
     XCTAssertFalse([token remove], @"Deregistration must not work twice");
 }
 
-// @comment by hotacool: cannot be passed when checking all tests together. Because after supporting class method, the 'forwardInvocation' of testClass.class is changed, so the implementations of 'forwardInvocation' for NSObject and testClass.class cannot be equal!
 - (void)testGlobalTokenDeregistration {
     TestClass *testClass = [TestClass new];
 
@@ -549,6 +552,23 @@
     [testClass testCall];
     XCTAssertFalse(testCallCalled, @"Must be set to NO");
 
+    XCTAssertFalse([aspectToken remove], @"Must not able to deregister again");
+}
+
+// @add by hotacool: test hooking class method
+- (void)testHookingClassMethod {
+    __block BOOL testCallCalled = NO;
+    id aspectToken = [TestClass aspect_hookSelector:@selector(testClassMethod)
+                                        withOptions:AspectPositionBefore|AspectOptionAutomaticRemoval
+                                         usingBlock:^(id<AspectInfo> info) {
+                                             testCallCalled = YES;
+                                         }
+                                              error:nil];
+    [TestClass testClassMethod];
+    XCTAssertTrue(testCallCalled, @"Must be set to YES");
+    testCallCalled = NO;
+    [TestClass testClassMethod];
+    XCTAssertFalse(testCallCalled, @"Must be set to NO");
     XCTAssertFalse([aspectToken remove], @"Must not able to deregister again");
 }
 
