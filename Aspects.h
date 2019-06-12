@@ -46,7 +46,7 @@ typedef NS_OPTIONS(NSUInteger, AspectOptions) {
 @interface NSObject (Aspects)
 
 /// Adds a block of code before/instead/after the current `selector` for a specific class.
-///
+/// Support hooking class method now.
 /// @param block Aspects replicates the type signature of the method being hooked.
 /// The first parameter will be `id<AspectInfo>`, followed by all parameters of the method.
 /// These parameters are optional and will be filled to match the block signature.
@@ -60,6 +60,7 @@ typedef NS_OPTIONS(NSUInteger, AspectOptions) {
                                  error:(NSError **)error;
 
 /// Adds a block of code before/instead/after the current `selector` for a specific instance.
+/// @note Not support class method.
 - (id<AspectToken>)aspect_hookSelector:(SEL)selector
                            withOptions:(AspectOptions)options
                             usingBlock:(id)block

@@ -445,13 +445,15 @@ static void _aspect_modifySwizzledClasses(void (^block)(NSMutableSet *swizzledCl
 static Class aspect_swizzleClassInPlace(Class klass) {
     NSCParameterAssert(klass);
     NSString *className = NSStringFromClass(klass);
+    if (class_isMetaClass(klass)) {// @add by hotacool : support class method. make a distinction between class and meta class
+        className = [NSString stringWithFormat:@"Meta_%@", className];
+    }
 
     _aspect_modifySwizzledClasses(^(NSMutableSet *swizzledClasses) {
-        // @comment by hotacool : support class method. make a distinction between class and meta class
-//        if (![swizzledClasses containsObject:className]) {
+        if (![swizzledClasses containsObject:className]) {
             aspect_swizzleForwardInvocation(klass);
             [swizzledClasses addObject:className];
-//        }
+        }
     });
     return klass;
 }
