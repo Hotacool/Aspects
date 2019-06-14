@@ -41,6 +41,10 @@
     return 99;
 }
 
+- (NSArray*)getArray {
+    return @[@"111"];
+}
+
 + (void)testClassMethod {
     NSLog(@"%s", __func__);
 }
@@ -173,6 +177,36 @@
     XCTAssertTrue(called, @"Flag needs to be called.");
 
     XCTAssertTrue([globalAspect remove]);
+}
+
+- (void)testObjectInsteadHook {
+    TestClass *testObject = [TestClass new];
+    XCTAssertEqualObjects([testObject getArray], @[@"111"], @"Must match");
+    id aspect = [TestClass aspect_hookSelector:@selector(getArray)
+                                   withOptions:AspectPositionInstead
+                                    usingBlock:^(id<AspectInfo> info){
+                                        __unsafe_unretained NSArray *originRetValue;
+                                        [[info originalInvocation] invoke];
+                                        [[info originalInvocation] getReturnValue:&originRetValue];
+                                        NSMutableArray *retValue = [NSMutableArray arrayWithArray:originRetValue];
+                                        __block BOOL isContain = NO;
+                                        [retValue enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+                                            if ([obj isEqualToString:@"222"]) {
+                                                isContain = YES;
+                                                *stop = YES;
+                                            }
+                                        }];
+                                        if (!isContain) {
+                                            [retValue insertObject:@"222" atIndex:0];
+                                        }
+                                        objc_setAssociatedObject(originRetValue, "kRetValueKey", retValue, OBJC_ASSOCIATION_RETAIN_NONATOMIC);//与originRetValue同生命周期
+                                        [[info originalInvocation] setReturnValue:&retValue];
+                                    }
+                                         error:nil];
+    XCTAssertEqualObjects([testObject getArray], (@[@"222", @"111"]), @"Must match");
+    XCTAssertTrue([aspect remove], @"Must return YES");
+    XCTAssertEqualObjects([testObject getArray], @[@"111"], @"Must match");
+    XCTAssertFalse([aspect remove], @"Must return NO");
 }
 
 - (void)testInsteadHook {
